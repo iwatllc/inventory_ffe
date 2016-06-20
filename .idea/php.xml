@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PhpProjectServersManager">
+    <servers>
+      <server host="localhost" id="980cbdf3-466b-4af0-935d-991e2ab50969" name="localhost" port="8888" use_path_mappings="true">
+        <path_mappings>
+          <mapping local-root="$PROJECT_DIR$/../../.." remote-root="/Applications/MAMP/htdocs/ffe" />
+        </path_mappings>
+      </server>
+    </servers>
+  </component>
+</project>

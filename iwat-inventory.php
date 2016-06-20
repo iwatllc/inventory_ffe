@@ -10,9 +10,16 @@ Author URI: http://www.iwatllc.com
 License: A "Slug" license name e.g. GPL2
 */
 
-add_action( 'admin_init', 'iwat_import_plugin_settings' );
+add_action('admin_init', 'iwat_import_plugin_settings' );
 
 add_action('admin_menu', 'iwat_import_plugin_menu');
+
+register_activation_hook(__FILE__, 'iwat_inventory_activation');
+
+add_action('iwat_daily_event', 'iwat_do_this_daily');
+
+register_deactivation_hook(__FILE__, 'iwat_inventory_deactivation');
+
 
 function iwat_import_plugin_menu() {
 	add_menu_page('iWAT Inventory Plugin Settings', 'Inventory Import Settings', 'administrator', 'iwat-import-plugin-settings', 'iwat_import_plugin_settings_page', 'dashicons-admin-generic');
@@ -100,47 +107,88 @@ function iwat_import_inventory() {
 
 	$lines = file(get_option('file_path') . "/" . get_option('equipment_file'));
 
+	$import_count = 0;
+
 	foreach ($lines as $inventory_line => $inventory) {
+
 		// First start importing on the line specified in the form.  skipping headers.
 		if ($inventory_line >= get_option('datastart')) {
-			$inventory_fields = explode(',', $inventory);
+			// $inventory_fields = explode(',', $inventory);
+			$inventory_fields = str_getcsv($inventory, ',', '"');
 
-			$slug = $inventory_fields[11];
-			$author_id = 1;
-			$title = $inventory_fields[11];
-			$content = $inventory_fields[2] . '<br>' . $inventory_fields[3] . '<br>' . $inventory_fields[6] . '<br>' ;
+			if (str_replace('"', "",$inventory_fields[5]) == '0'){
+				// ignore entry since it is marked to not show.
+			} else {
+				// This is a placeholder for sold items and we might add a sold image to the post.
+//				if (str_replace('"', "",$inventory_fields[31]) == 'SOLD'){
+//					// might put a sold tag on entries.
+//				}
 
-			$post_id = wp_insert_post(
-				array(
-					'comment_status'	=>	'closed',
-					'ping_status'		=>	'closed',
-					'post_author'		=>	str_replace('"', "", $author_id),
-					'post_name'		    =>	str_replace('"', "", $slug),
-					'post_title'		=>	str_replace('"', "", $title),
-					'post_content'      =>  str_replace('"', "", $content),
-					'post_status'		=>	'publish',
-					'post_type'		    =>	'inventory'
-				)
-			);
+				$slug = $inventory_fields[11];
+				$author_id = 1;
+				$title = $inventory_fields[19] . ' - ' . $inventory_fields[17] . ' - ' . $inventory_fields[18];
+				$content = $inventory_fields[6];
 
-			update_field('field_52dee641d74b8', '64', $post_id);  //Category (Taxonomy)    ?
-			update_field('field_52b358c91215d', '34', $post_id);  //Status (Taxonomy)      ?
-			update_field('field_523c0dd64b63d', '0', $post_id);  //Features (Boolean)      ?
-			update_field('field_523af9693ded3', str_replace('"', "", $inventory_fields[17]), $post_id);  //Manufacturer (Text)
-			update_field('field_523af9783ded4', str_replace('"', "", $inventory_fields[19]), $post_id);  //Year (Text)
-			update_field('field_523af9813ded5', str_replace('"', "", $inventory_fields[18]), $post_id);  //Model (Text)/
-			update_field('field_523af98a3ded6', str_replace('"', "", $inventory_fields[26]), $post_id);  //Stock (Text)
-			update_field('field_528a4967969a3', str_replace('"', "", $inventory_fields[8]), $post_id);  //Hours
-			update_field('field_523af98f3ded7', str_replace('"', "", $inventory_fields[28]), $post_id);  //Price
+				$post_id = wp_insert_post(
+					array(
+						'comment_status' => 'closed',
+						'ping_status' => 'closed',
+						'post_author' => str_replace('"', "", $author_id),
+						'post_name' => str_replace('"', "", $slug),
+						'post_title' => str_replace('"', "", $title),
+						'post_content' => str_replace('"', "", $content),
+						'post_status' => 'publish',
+						'post_type' => 'inventory'
+					)
+				);
 
-			$image_files = trim(str_replace('"', "", $inventory_fields[35]));
-			if (!empty($image_files)){
-				iwat_process_images($inventory_fields[35], $post_id);
+				// update_field('field_52dee641d74b8', str_replace('"', "", $inventory_fields[23]), $post_id);  //Category (Taxonomy)    ?
+				$category = str_replace('"', "", $inventory_fields[23]);
+				if ($category == '0') {
+					$category = '62'; // Check to see if they left the category at zero and put in Misc.
+					// Otherwise it will not show at all on the site.
+				}
+				update_field('field_52dee641d74b8', $category, $post_id);  //Category (Taxonomy)    ?
+
+
+				// Check the status and set appropriatly.
+				$status = str_replace('"', "", $inventory_fields[30]);
+				if ($status == 'N') {
+					$status = '35';
+				} elseif ($status == 'U') {
+					$status = '34';
+				}
+				update_field('field_52b358c91215d', $status, $post_id);  //Status (Taxonomy)      ?
+
+				// Check the featured status and set appropriatly.
+				$featured = str_replace('"', "", $inventory_fields[24]);
+				if ($featured == 'CC') {
+					$featured = 1;
+				} else {
+					$featured = 0;
+				}
+				update_field('field_523c0dd64b63d', $featured, $post_id);  //Features (Boolean)      ?
+				update_field('field_523af9693ded3', str_replace('"', "", $inventory_fields[17]), $post_id);  //Manufacturer (Text)
+				update_field('field_523af9783ded4', str_replace('"', "", $inventory_fields[19]), $post_id);  //Year (Text)
+				update_field('field_523af9813ded5', str_replace('"', "", $inventory_fields[18]), $post_id);  //Model (Text)/
+				update_field('field_523af98a3ded6', str_replace('"', "", $inventory_fields[26]), $post_id);  //Stock (Text)
+				update_field('field_528a4967969a3', str_replace('"', "", $inventory_fields[8]), $post_id);  //Hours
+				update_field('field_523af98f3ded7', str_replace('"', "", $inventory_fields[28]), $post_id);  //Price
+
+				$image_files = trim(str_replace('"', "", $inventory_fields[35]));
+				if (!empty($image_files)) {
+					iwat_process_images($inventory_fields[35], $post_id);
+				}
+
+				++$import_count;
 			}
 
 		}
 
 	}
+
+	echo "Sucessfully imported ".$import_count." inventory items.";
+
 }
 
 function iwat_delete_inventory(){
@@ -242,98 +290,22 @@ function iwat_set_Gallery_Image( $gallery_images, $post_id  ){
 
 }
 
-//function iwat_import_inventory_old() {
-//
-//	update_option( 'last_run_info', date("Y-m-d h:i:sa") );
-//
-//	$post_id = -1;
-//
-//	$slug = 'example-inventory';
-//	$author_id = 1;
-//	$title = 'Sample Inventory Item Inserted 7';
-//	$content = 'Sample Inventory Content 7';
-//
-//
-//	// Search Args
-//	$args = array(
-//		'numberposts'	=> -1,
-//		'post_type'		=> 'inventory',
-//		'meta_key'		=> 'stock',
-//		'meta_value'	=> '78-777-7777'
-//	);
-//
-//	$the_query = new WP_Query( $args );
-//
-//	if( $the_query->have_posts() ){
-//		while( $the_query->have_posts() ) {
-//			$the_query->the_post();
-//
-//
-//			$post_id = get_the_id();
-//
-//			// Update post
-//			$my_post = array(
-//				'ID'                => $post_id,
-//				'comment_status'	=>	'closed',
-//				'ping_status'		=>	'closed',
-//				'post_author'		=>	$author_id,
-//				'post_name'		    =>	$slug,
-//				'post_title'        => 'This is the updated post title. 2',
-//				'post_content'      => 'This is the updated content. 2',
-//				'post_status'		=>	'publish',
-//				'post_type'		    =>	'inventory'
-//			);
-//
-//			// Update the post into the database
-//			//wp_update_post( $my_post );
-//			wp_insert_post( $my_post );
-//
-//			update_field('field_52dee641d74b8', '64', $post_id);  //Category (Taxonomy)
-//			update_field('field_52b358c91215d', '34', $post_id);  //Status (Taxonomy)
-//			update_field('field_523c0dd64b63d', '0', $post_id);  //Features (Boolean)
-//			update_field('field_523af9693ded3', 'King James Updated', $post_id);  //Manufacturer (Text)
-//			update_field('field_523af9783ded4', '1977 Updated', $post_id);  //Year (Text)
-//			update_field('field_523af9813ded5', '7 Series Updated', $post_id);  //Model (Text)
-//			update_field('field_523af98a3ded6', '77-777-7777', $post_id);  //Stock (Text)
-//			update_field('field_528a4967969a3', '700', $post_id);  //Hours
-//			update_field('field_523af98f3ded7', '77.77', $post_id);  //Price
-//
-//		}
-//
-//	} else {
-//
-//		$post_id = wp_insert_post(
-//			array(
-//				'comment_status'	=>	'closed',
-//				'ping_status'		=>	'closed',
-//				'post_author'		=>	$author_id,
-//				'post_name'		    =>	$slug,
-//				'post_title'		=>	$title,
-//				'post_content'      =>  $content,
-//				'post_status'		=>	'publish',
-//				'post_type'		    =>	'inventory'
-//			)
-//		);
-//
-//		update_field('field_52dee641d74b8', '64', $post_id);  //Category (Taxonomy)
-//		update_field('field_52b358c91215d', '34', $post_id);  //Status (Taxonomy)
-//		update_field('field_523c0dd64b63d', '0', $post_id);  //Features (Boolean)
-//		update_field('field_523af9693ded3', 'King James', $post_id);  //Manufacturer (Text)
-//		update_field('field_523af9783ded4', '1977', $post_id);  //Year (Text)
-//		update_field('field_523af9813ded5', '7 Series', $post_id);  //Model (Text)/
-//		update_field('field_523af98a3ded6', '78-777-7777', $post_id);  //Stock (Text)
-//		update_field('field_528a4967969a3', '700', $post_id);  //Hours
-//		update_field('field_523af98f3ded7', '77.77', $post_id);  //Price
-//
-//		iwat_set_Featured_Image( '/users/rfulcher/Documents/Bronco.jpg',   $post_id );
-//		iwat_set_Gallery_Image( '/users/rfulcher/Documents/IMG_0113.jpg',   $post_id );
-//		iwat_set_Gallery_Image( '/users/rfulcher/Documents/IMG_0114.jpg',   $post_id );
-//
-//
-//	}
-//
-//	wp_reset_query();
-//
-//
-//
-//}
+
+
+
+function iwat_inventory_activation() {
+	if (! wp_next_scheduled ( 'iwat_daily_event' )) {
+		wp_schedule_event(time(), 'daily', 'iwat_daily_event');
+	}
+}
+
+function iwat_do_this_daily() {
+	iwat_import_inventory();
+}
+
+
+function iwat_inventory_deactivation() {
+	wp_clear_scheduled_hook('iwat_daily_event');
+}
+
+
